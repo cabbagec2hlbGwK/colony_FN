@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useMemo } from 'react';
 import { X } from 'lucide-react';
 import type { SelectedElement, RawElement } from '../../types';
-import { analyzeUrl } from '../../services/api';
 
 interface ElementSummaryProps {
   filter: SelectedElement;
+  rawElements: RawElement[];
   onClose: () => void;
 }
 
@@ -15,75 +15,59 @@ interface ElementMatch {
   count: number;
 }
 
-export const ElementSummary: React.FC<ElementSummaryProps> = ({ filter, onClose }) => {
-  const [matches, setMatches] = useState<ElementMatch[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const analyzeElements = async () => {
-      setLoading(true);
-      setError(null);
+export const ElementSummary: React.FC<ElementSummaryProps> = ({ 
+  filter, 
+  rawElements,
+  onClose 
+}) => {
+  const matches = useMemo(() => {
+    // Group matching elements by their structure
+    const matchGroups = new Map<string, ElementMatch>();
+    
+    rawElements.forEach(element => {
+      let matches = false;
       
-      try {
-        const elements = await analyzeUrl(window.location.href);
-        
-        // Group matching elements by their structure
-        const matchGroups = new Map<string, ElementMatch>();
-        
-        elements.forEach(element => {
-          let matches = false;
-          
-          if (filter.type === 'id' && element.id === filter.selector.slice(1)) {
-            matches = true;
-          } else if (filter.type === 'class' && element.class?.includes(filter.selector.slice(1))) {
-            matches = true;
-          } else if (filter.type === 'tag' && element.tag === filter.selector) {
-            matches = true;
-          }
-
-          if (matches) {
-            const attributes: Record<string, string | string[]> = {};
-            if (element.id) attributes.id = element.id;
-            if (element.class) attributes.class = element.class;
-            if (element.name) attributes.name = element.name;
-
-            const key = JSON.stringify({ tag: element.tag, attributes });
-            
-            if (matchGroups.has(key)) {
-              const group = matchGroups.get(key)!;
-              group.count++;
-            } else {
-              const attributeString = Object.entries(attributes)
-                .map(([key, value]) => {
-                  if (Array.isArray(value)) {
-                    return `${key}="${value.join(' ')}"`;
-                  }
-                  return `${key}="${value}"`;
-                })
-                .join(' ');
-
-              matchGroups.set(key, {
-                tag: element.tag,
-                fullHtml: `<${element.tag}${attributeString ? ' ' + attributeString : ''}>${element.tag === 'img' ? '' : '...'}</${element.tag}>`,
-                attributes,
-                count: 1
-              });
-            }
-          }
-        });
-
-        setMatches(Array.from(matchGroups.values()).sort((a, b) => b.count - a.count));
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to analyze elements');
-        console.error('Error analyzing elements:', err);
-      } finally {
-        setLoading(false);
+      if (filter.type === 'id' && element.id === filter.selector.slice(1)) {
+        matches = true;
+      } else if (filter.type === 'class' && element.class?.includes(filter.selector.slice(1))) {
+        matches = true;
+      } else if (filter.type === 'tag' && element.tag === filter.selector) {
+        matches = true;
       }
-    };
 
-    analyzeElements();
-  }, [filter]);
+      if (matches) {
+        const attributes: Record<string, string | string[]> = {};
+        if (element.id) attributes.id = element.id;
+        if (element.class) attributes.class = element.class;
+        if (element.name) attributes.name = element.name;
+
+        const key = JSON.stringify({ tag: element.tag, attributes });
+        
+        if (matchGroups.has(key)) {
+          const group = matchGroups.get(key)!;
+          group.count++;
+        } else {
+          const attributeString = Object.entries(attributes)
+            .map(([key, value]) => {
+              if (Array.isArray(value)) {
+                return `${key}="${value.join(' ')}"`;
+              }
+              return `${key}="${value}"`;
+            })
+            .join(' ');
+
+          matchGroups.set(key, {
+            tag: element.tag,
+            fullHtml: `<${element.tag}${attributeString ? ' ' + attributeString : ''}>${element.tag === 'img' ? '' : '...'}</${element.tag}>`,
+            attributes,
+            count: 1
+          });
+        }
+      }
+    });
+
+    return Array.from(matchGroups.values()).sort((a, b) => b.count - a.count);
+  }, [filter, rawElements]);
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -100,15 +84,7 @@ export const ElementSummary: React.FC<ElementSummaryProps> = ({ filter, onClose 
       </div>
 
       <div className="divide-y divide-gray-200">
-        {loading ? (
-          <div className="p-4 text-center text-gray-500">
-            Analyzing elements...
-          </div>
-        ) : error ? (
-          <div className="p-4 text-center text-red-500">
-            {error}
-          </div>
-        ) : matches.length === 0 ? (
+        {matches.length === 0 ? (
           <div className="p-4 text-center text-gray-500">
             No matching elements found
           </div>
