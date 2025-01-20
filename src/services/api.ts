@@ -14,12 +14,16 @@ export async function analyzeUrl(url: string): Promise<RawElement[]> {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'application/json',
       },
+      mode: 'cors', // Explicitly set CORS mode
+      credentials: 'same-origin', // Changed from 'include' to 'same-origin'
       body: JSON.stringify({ url }),
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errorText = await response.text();
+      throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
     }
 
     const data = await response.json();
