@@ -1,4 +1,5 @@
 import type { PageElements, RawElement } from '../types';
+import { analyzeUrl } from '../services/api';
 
 function processElements(rawElements: RawElement[]): PageElements {
   const elements: PageElements = {
@@ -74,14 +75,10 @@ function processElements(rawElements: RawElement[]): PageElements {
 
 export async function analyzePage(url: string): Promise<PageElements> {
   try {
-    // In a real implementation, this would make a request to your backend
-    // For now, we'll load the sample data
-    const response = await fetch('/src/data/sample-elements.json');
-    const rawElements: RawElement[] = await response.json();
-    
+    const rawElements = await analyzeUrl(url);
     return processElements(rawElements);
   } catch (error) {
     console.error('Error analyzing page:', error);
-    throw new Error('Failed to analyze page');
+    throw error;
   }
 }

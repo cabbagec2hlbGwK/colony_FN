@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import type { SelectedElement, RawElement } from '../../types';
+import { analyzeUrl } from '../../services/api';
 
 interface ElementSummaryProps {
   filter: SelectedElement;
@@ -17,15 +18,15 @@ interface ElementMatch {
 export const ElementSummary: React.FC<ElementSummaryProps> = ({ filter, onClose }) => {
   const [matches, setMatches] = useState<ElementMatch[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchMatches = async () => {
+    const analyzeElements = async () => {
       setLoading(true);
+      setError(null);
+      
       try {
-        // In a real implementation, this would be an API call
-        // For now, we'll load the sample data and filter it
-        const response = await fetch('/src/data/sample-elements.json');
-        const elements: RawElement[] = await response.json();
+        const elements = await analyzeUrl(window.location.href);
         
         // Group matching elements by their structure
         const matchGroups = new Map<string, ElementMatch>();
@@ -73,14 +74,15 @@ export const ElementSummary: React.FC<ElementSummaryProps> = ({ filter, onClose 
         });
 
         setMatches(Array.from(matchGroups.values()).sort((a, b) => b.count - a.count));
-      } catch (error) {
-        console.error('Error fetching matches:', error);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to analyze elements');
+        console.error('Error analyzing elements:', err);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchMatches();
+    analyzeElements();
   }, [filter]);
 
   return (
@@ -100,7 +102,11 @@ export const ElementSummary: React.FC<ElementSummaryProps> = ({ filter, onClose 
       <div className="divide-y divide-gray-200">
         {loading ? (
           <div className="p-4 text-center text-gray-500">
-            Loading matches...
+            Analyzing elements...
+          </div>
+        ) : error ? (
+          <div className="p-4 text-center text-red-500">
+            {error}
           </div>
         ) : matches.length === 0 ? (
           <div className="p-4 text-center text-gray-500">
@@ -118,20 +124,25 @@ export const ElementSummary: React.FC<ElementSummaryProps> = ({ filter, onClose 
                     Found {match.count} {match.count === 1 ? 'instance' : 'instances'}
                   </p>
                 </div>
+                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                  {Object.keys(match.attributes).length} attributes
+                </span>
               </div>
+              
               <div className="mt-2">
                 <pre className="text-xs bg-gray-50 p-2 rounded overflow-x-auto">
                   {match.fullHtml}
                 </pre>
               </div>
+              
               {Object.keys(match.attributes).length > 0 && (
                 <div className="mt-2">
                   <p className="text-xs text-gray-500 mb-1">Attributes:</p>
                   <div className="space-y-1">
                     {Object.entries(match.attributes).map(([key, value]) => (
-                      <div key={key} className="text-xs">
-                        <span className="text-gray-500">{key}:</span>{' '}
-                        <code className="bg-gray-50 px-1 rounded">
+                      <div key={key} className="text-xs flex items-start">
+                        <span className="text-gray-500 min-w-[60px]">{key}:</span>
+                        <code className="bg-gray-50 px-1 rounded ml-2 flex-1">
                           {Array.isArray(value) ? value.join(' ') : value}
                         </code>
                       </div>
