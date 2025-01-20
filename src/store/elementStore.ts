@@ -18,6 +18,7 @@ export const useElementStore = create<ElementStore>((set, get) => ({
   error: null,
 
   setRawElements: (elements) => {
+    console.log('Setting raw elements:', elements); // Debug log
     set({ rawElements: elements });
     get().parseElements();
   },
@@ -34,6 +35,8 @@ export const useElementStore = create<ElementStore>((set, get) => ({
     const { rawElements } = get();
     
     try {
+      console.log('Parsing elements:', rawElements); // Debug log
+      
       const parsed: ParsedElements = {
         ids: new Map(),
         classes: new Map(),
@@ -51,7 +54,7 @@ export const useElementStore = create<ElementStore>((set, get) => ({
         } else {
           const tagInfo = parsed.tags.get(element.tag)!;
           tagInfo.count++;
-          if (tagInfo.examples.length < 3) { // Keep up to 3 examples
+          if (tagInfo.examples.length < 3) {
             tagInfo.examples.push(element);
           }
         }
@@ -73,8 +76,10 @@ export const useElementStore = create<ElementStore>((set, get) => ({
         }
 
         // Parse Classes
-        if (element.class) {
+        if (element.class && Array.isArray(element.class)) {
           element.class.forEach(className => {
+            if (!className) return; // Skip empty class names
+            
             if (!parsed.classes.has(className)) {
               parsed.classes.set(className, {
                 count: 1,
@@ -108,10 +113,17 @@ export const useElementStore = create<ElementStore>((set, get) => ({
         }
       });
 
+      console.log('Parsed elements:', {
+        tags: Array.from(parsed.tags.entries()),
+        ids: Array.from(parsed.ids.entries()),
+        classes: Array.from(parsed.classes.entries()),
+        attributes: Array.from(parsed.attributes.entries()),
+      }); // Debug log
+
       set({ parsedElements: parsed, error: null });
     } catch (error) {
-      set({ error: 'Failed to parse elements' });
       console.error('Error parsing elements:', error);
+      set({ error: 'Failed to parse elements' });
     }
   },
 }));

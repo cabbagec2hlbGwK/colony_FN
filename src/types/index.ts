@@ -1,27 +1,9 @@
-// ... existing types ...
-
+// Update the RawElement type to match backend response
 export interface RawElement {
   tag: string;
   id: string | null;
-  class: string[] | null;
+  class: string[] | null;  // This matches the backend's array format
   name: string | null;
 }
 
-export interface ElementInfo {
-  count: number;
-  examples: RawElement[];
-}
-
-export interface ParsedElements {
-  ids: Map<string, ElementInfo>;
-  classes: Map<string, ElementInfo>;
-  tags: Map<string, ElementInfo>;
-  attributes: Map<string, ElementInfo>;
-}
-
-export interface ElementStats {
-  totalElements: number;
-  uniqueIds: number;
-  uniqueClasses: number;
-  uniqueTags: number;
-}
+// ... rest of the types remain the same

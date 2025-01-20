@@ -4,7 +4,6 @@ import sampleData from '../data/sample-elements.json';
 
 export async function analyzeUrl(url: string): Promise<RawElement[]> {
   if (config.useMockData) {
-    // Simulate network delay
     await new Promise(resolve => setTimeout(resolve, 1000));
     return sampleData;
   }
@@ -16,8 +15,8 @@ export async function analyzeUrl(url: string): Promise<RawElement[]> {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
-      mode: 'cors', // Explicitly set CORS mode
-      credentials: 'same-origin', // Changed from 'include' to 'same-origin'
+      mode: 'cors',
+      credentials: 'same-origin',
       body: JSON.stringify({ url }),
     });
 
@@ -28,10 +27,13 @@ export async function analyzeUrl(url: string): Promise<RawElement[]> {
 
     const data = await response.json();
     
-    // Transform backend response to match our types
+    // Transform the response to match our RawElement type
     return data.map((element: any) => ({
-      ...element,
-      class: element.class_ // Backend uses class_, we use class
+      tag: element.tag,
+      id: element.id,
+      class: Array.isArray(element.class) ? element.class : 
+             (element.class ? [element.class] : null), // Handle both array and string cases
+      name: element.name
     }));
   } catch (error) {
     console.error('Error analyzing URL:', error);
