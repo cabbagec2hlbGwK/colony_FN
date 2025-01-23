@@ -1,0 +1,10 @@
+[
+  {"tag": "form", "id": "login-form", "class": ["auth-form"], "name": null},
+  {"tag": "input", "id": "username", "class": ["form-input"], "name": "username"},
+  {"tag": "input", "id": "password", "class": ["form-input"], "name": "password"},
+  {"tag": "button", "id": "submit-btn", "class": ["btn", "primary"], "name": null},
+  {"tag": "div", "id": "error-message", "class": ["alert", "error"], "name": null},
+  {"tag": "div", "id": "success-message", "class": ["alert", "success"], "name": null},
+  {"tag": "a", "id": "forgot-password", "class": ["link"], "name": null},
+  {"tag": "div", "id": "loading-spinner", "class": ["spinner"], "name": null}
+]

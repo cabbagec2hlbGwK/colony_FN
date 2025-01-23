@@ -1,42 +1,83 @@
 import config from '../config';
-import type { RawElement } from '../types';
-import sampleData from '../data/sample-elements.json';
+import type { 
+  RawElement, 
+  CrawlerTask, 
+  Flow
+} from '../types';
+
+const API_BASE_URL = config.apiUrl;
 
 export async function analyzeUrl(url: string): Promise<RawElement[]> {
-  if (config.useMockData) {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    return sampleData;
-  }
-
   try {
-    const response = await fetch(`${config.apiUrl}/elements`, {
+    console.log('Sending request to:', `${API_BASE_URL}/api/element`);
+    
+    const response = await fetch(`${API_BASE_URL}/api/element`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
-      mode: 'cors',
-      credentials: 'same-origin',
-      body: JSON.stringify({ url }),
+      credentials: 'include', // Include cookies if needed
+      body: JSON.stringify({ url })
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+      const errorData = await response.json().catch(() => null);
+      throw new Error(
+        errorData?.message || 
+        `HTTP error! status: ${response.status}`
+      );
     }
 
     const data = await response.json();
-    
-    // Transform the response to match our RawElement type
-    return data.map((element: any) => ({
-      tag: element.tag,
-      id: element.id,
-      class: Array.isArray(element.class) ? element.class : 
-             (element.class ? [element.class] : null), // Handle both array and string cases
-      name: element.name
-    }));
+    console.log('URL Analysis Response:', data);
+    return data;
+
   } catch (error) {
     console.error('Error analyzing URL:', error);
-    throw new Error('Failed to analyze URL. Please check the backend connection.');
+    throw error; // Throw the original error for better debugging
   }
 }
+
+export async function analyzeFlow(
+  startUrl: string, 
+  flows: Flow[], 
+  tasks: CrawlerTask[]
+): Promise<RawElement[]> {
+  try {
+    const analysisRequest = {
+      startUrl,
+      flows,
+      tasks
+    };
+
+    console.log('Sending flow analysis request:', analysisRequest);
+
+    const response = await fetch(`${API_BASE_URL}/api/flowcheck`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      credentials: 'include', // Include cookies if needed
+      body: JSON.stringify(analysisRequest)
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      throw new Error(
+        errorData?.message || 
+        `HTTP error! status: ${response.status}`
+      );
+    }
+
+    const data = await response.json();
+    console.log('Flow Analysis Response:', data);
+    return data;
+
+  } catch (error) {
+    console.error('Error analyzing flow:', error);
+    throw error; // Throw the original error for better debugging
+  }
+}
+
