@@ -1,19 +1,54 @@
+// Base Types
+export type ID = string;
+export type Timestamp = number;
+export type ISO8601 = string;
+
 // Element Types
 export interface RawElement {
   tag: string;
   id: string | null;
   class: string[] | null;
   name: string | null;
+  attributes?: Record<string, string>;
+  innerText?: string;
+  innerHTML?: string;
+  xpath?: string;
   metadata?: {
     flowId?: string;
     timestamp?: string;
     confidence?: number;
+    visibility?: {
+      isVisible: boolean;
+      inViewport: boolean;
+      computedStyle?: {
+        display: string;
+        visibility: string;
+        opacity: string;
+      };
+    };
+    position?: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
   };
 }
 
 export interface ElementInfo {
   count: number;
   examples: RawElement[];
+  metadata?: {
+    commonAttributes?: Record<string, number>;
+    averagePosition?: {
+      x: number;
+      y: number;
+    };
+    visibilityStats?: {
+      visible: number;
+      hidden: number;
+    };
+  };
 }
 
 export interface ParsedElements {
@@ -27,10 +62,26 @@ export interface SelectedElement {
   selector: string;
   type: 'id' | 'class' | 'tag';
   count: number;
+  metadata?: {
+    confidence?: number;
+    matchScore?: number;
+    lastUsed?: Timestamp;
+    usageCount?: number;
+  };
 }
 
 // Action Types
-export type ActionType = 'click' | 'type' | 'extract' | 'wait' | 'hover' | 'scroll';
+export type ActionType = 
+  | 'click' 
+  | 'type' 
+  | 'extract' 
+  | 'wait' 
+  | 'hover'
+  | 'scroll'
+  | 'select'
+  | 'submit'
+  | 'screenshot'
+  | 'custom';
 
 export interface ActionMetadata {
   timeout?: number;
@@ -40,61 +91,120 @@ export interface ActionMetadata {
     waitForElement?: string;
     waitForTimeout?: number;
     waitForVisible?: boolean;
+    waitForEnabled?: boolean;
+    waitForAttribute?: {
+      name: string;
+      value: string;
+    };
+  };
+  validation?: {
+    required?: boolean;
+    format?: string;
+    minLength?: number;
+    maxLength?: number;
+    pattern?: string;
+  };
+  extraction?: {
+    attribute?: string;
+    format?: 'text' | 'html' | 'value';
+    transform?: 'trim' | 'lowercase' | 'uppercase' | 'number';
+    multiple?: boolean;
+  };
+  scroll?: {
+    behavior: 'auto' | 'smooth';
+    block: 'start' | 'center' | 'end' | 'nearest';
+    inline: 'start' | 'center' | 'end' | 'nearest';
+  };
+  selectionContext?: {
+    selectedElements: SelectedElement[];
+    selectedTab: 'ids' | 'classes' | 'tags';
+    searchTerm: string;
+    filteredElements?: {
+      key: string;
+      count: number;
+      examples: RawElement[];
+    }[];
   };
 }
 
 export interface TaskAction {
   type: ActionType;
   selector: string;
-  selectorType: 'id' | 'class' | 'tag';
+  selectorType: 'id' | 'class' | 'tag' | 'xpath' | 'css';
   value?: string;
   description: string;
   metadata?: ActionMetadata;
+  error?: {
+    message: string;
+    code: string;
+    timestamp: ISO8601;
+    attempts: number;
+  };
 }
 
 // Task Types
 export interface CrawlerTask {
-  id: string;
+  id: ID;
   actions: TaskAction[];
   order: number;
   metadata?: {
     name?: string;
     description?: string;
-    created?: number;
-    modified?: number;
+    created?: Timestamp;
+    modified?: Timestamp;
+    tags?: string[];
+    priority?: number;
+    timeout?: number;
+    retries?: number;
+    dependencies?: ID[];
     executionStats?: {
       successCount: number;
       failureCount: number;
-      lastExecuted?: number;
+      lastExecuted?: Timestamp;
       averageExecutionTime?: number;
+      errorRate?: number;
+      lastError?: {
+        message: string;
+        timestamp: ISO8601;
+      };
     };
   };
 }
 
 // Flow Types
 export interface Flow {
-  id: string;
+  id: ID;
   name: string;
   tasks: CrawlerTask[];
   order: number;
   isAnalyzing?: boolean;
   description?: string;
   metadata?: {
-    created?: number;
-    modified?: number;
-    lastExecuted?: number;
+    created?: Timestamp;
+    modified?: Timestamp;
+    lastExecuted?: Timestamp;
     executionCount?: number;
     averageExecutionTime?: number;
     successRate?: number;
-    lastAnalyzed?: string;
+    lastAnalyzed?: ISO8601;
+    version?: string;
+    author?: string;
+    tags?: string[];
+    category?: string;
+    priority?: number;
+    schedule?: {
+      type: 'manual' | 'interval' | 'cron';
+      value?: string;
+      timezone?: string;
+    };
   };
 }
 
 // Analysis Types
 export interface ElementAnalysis {
-  flowId: string | null;
+  flowId: ID | null;
   elements: RawElement[];
-  timestamp: number;
+  timestamp: Timestamp;
   metadata?: {
     url?: string;
     success?: boolean;
@@ -105,6 +215,16 @@ export interface ElementAnalysis {
       existingFlows?: number;
       newTasks?: number;
     };
+    performance?: {
+      loadTime: number;
+      processingTime: number;
+      memoryUsage: number;
+    };
+    browser?: {
+      name: string;
+      version: string;
+      platform: string;
+    };
   };
 }
 
@@ -112,8 +232,9 @@ export interface ElementAnalysis {
 export interface FlowAnalysisRequest {
   startUrl: string;
   flows: Flow[];
+  tasks: CrawlerTask[];
   context: {
-    timestamp: string;
+    timestamp: ISO8601;
     totalFlows: number;
     isTestMode: boolean;
     environment?: string;
@@ -122,13 +243,13 @@ export interface FlowAnalysisRequest {
       validateFlows?: boolean;
       maxExecutionTime?: number;
       stopOnError?: boolean;
-    };
-  };
-  newFlow: {
-    tasks: CrawlerTask[];
-    metadata: {
-      createdAt: string;
-      position: number;
+      screenshot?: boolean;
+      deviceEmulation?: {
+        width: number;
+        height: number;
+        deviceScaleFactor: number;
+        mobile: boolean;
+      };
     };
   };
 }
@@ -139,14 +260,26 @@ export interface FlowAnalysisResponse {
     startUrl: string;
     flowsExecuted: number;
     totalElements: number;
-    timestamp: string;
+    timestamp: ISO8601;
     executionTime: number;
     flowMetrics?: {
       totalActions: number;
       successRate: number;
       coverage: number;
+      performance: {
+        averageActionTime: number;
+        totalTime: number;
+        memoryUsage: number;
+      };
     };
   };
+  errors?: Array<{
+    message: string;
+    code: string;
+    taskId?: ID;
+    actionIndex?: number;
+    timestamp: ISO8601;
+  }>;
 }
 
 export interface CreateCrawlerRequest {
@@ -155,18 +288,22 @@ export interface CreateCrawlerRequest {
   flows: Flow[];
   config: CrawlerConfig;
   metadata: {
-    createdAt: string;
+    createdAt: ISO8601;
     createdBy: string;
     version: string;
+    description?: string;
+    tags?: string[];
+    priority?: number;
   };
 }
 
 export interface CreateCrawlerResponse {
-  id: string;
+  id: ID;
   status: 'created' | 'pending' | 'error';
   metadata?: {
-    created: string;
-    estimatedFirstRun?: string;
+    created: ISO8601;
+    estimatedFirstRun?: ISO8601;
+    config: CrawlerConfig;
   };
 }
 
@@ -190,6 +327,27 @@ export interface CrawlerConfig {
     proxy?: {
       enabled: boolean;
       url?: string;
+      rotation?: boolean;
+    };
+    authentication?: {
+      type: 'basic' | 'token' | 'oauth2';
+      credentials?: {
+        username?: string;
+        password?: string;
+        token?: string;
+      };
+    };
+    headers?: Record<string, string>;
+    cookies?: Array<{
+      name: string;
+      value: string;
+      domain: string;
+      path?: string;
+    }>;
+    javascript?: {
+      enabled: boolean;
+      timeout?: number;
+      waitForNetwork?: boolean;
     };
   };
 }
@@ -197,10 +355,15 @@ export interface CrawlerConfig {
 // Store Types
 export interface ElementStoreState {
   analysisHistory: ElementAnalysis[];
-  currentFlowId: string | null;
+  currentFlowId: ID | null;
   parsedElements: ParsedElements | null;
   isAnalyzing: boolean;
   error: string | null;
+  metadata?: {
+    lastUpdate: Timestamp;
+    totalAnalyses: number;
+    cacheStatus: 'fresh' | 'stale' | 'expired';
+  };
 }
 
 export interface FlowStoreState {
@@ -209,29 +372,39 @@ export interface FlowStoreState {
   isCreating: boolean;
   isUpdating: boolean;
   error: string | null;
+  metadata?: {
+    lastSync: Timestamp;
+    totalFlows: number;
+    activeFlows: number;
+  };
 }
 
 // Component Props Types
 export interface FlowListProps {
   flows: Flow[];
-  currentFlowId: string | null;
-  onSelectFlow: (flowId: string | null) => void;
-  onDeleteFlow: (flowId: string) => void;
+  currentFlowId: ID | null;
+  onSelectFlow: (flowId: ID | null) => void;
+  onDeleteFlow: (flowId: ID) => void;
   onCreateFlow: () => void;
+  isLoading?: boolean;
+  error?: string;
 }
 
 export interface TaskListProps {
   tasks: CrawlerTask[];
-  onDeleteTask: (taskId: string) => void;
+  onDeleteTask: (taskId: ID) => void;
   onReorderTasks: (startIndex: number, endIndex: number) => void;
-  onEditTask?: (taskId: string) => void;
+  onEditTask?: (taskId: ID) => void;
   isReadOnly?: boolean;
+  isLoading?: boolean;
 }
 
 export interface ElementSummaryProps {
   elements: RawElement[];
   onAddAction?: (action: TaskAction) => void;
   isReadOnly?: boolean;
+  maxHeight?: string;
+  showMetadata?: boolean;
 }
 
 export interface ActionButtonProps {
@@ -239,32 +412,116 @@ export interface ActionButtonProps {
   onClick: () => void;
   disabled?: boolean;
   size?: 'sm' | 'md' | 'lg';
-  variant?: 'primary' | 'secondary' | 'outline';
+  variant?: 'primary' | 'secondary' | 'outline' | 'danger';
+  loading?: boolean;
+  icon?: React.ReactNode;
 }
 
-export interface ElementSelectorProps {
-  elements: ParsedElements;
-  selectedElements: SelectedElement[];
-  onElementSelect: (element: SelectedElement) => void;
-  startUrl: string;
-  flows: Flow[];
-  onFlowCreated: (flow: Flow) => void;
+// Crawler Types
+export interface Crawler {
+  id: ID;
+  name: string;
+  status: 'running' | 'stopped' | 'error' | 'completed';
+  url: string;
+  lastRun?: string;
+  schedule?: string;
+  createdAt: string;
+  configuration: {
+    depth: number;
+    interval: number;
+    maxPages: number;
+  };
+  metadata?: {
+    version: string;
+    author: string;
+    created: ISO8601;
+    modified: ISO8601;
+    lastRun?: ISO8601;
+    nextRun?: ISO8601;
+    stats?: {
+      totalRuns: number;
+      successfulRuns: number;
+      failedRuns: number;
+      averageRuntime: number;
+      lastError?: {
+        message: string;
+        timestamp: ISO8601;
+      };
+    };
+  };
 }
 
-// Utility Types
+// Error Types
+export interface ApiError {
+  code: string;
+  message: string;
+  details?: unknown;
+  timestamp?: ISO8601;
+  path?: string;
+  requestId?: string;
+}
+
+export type ErrorWithContext = {
+  error: Error;
+  context: {
+    component?: string;
+    action?: string;
+    timestamp: ISO8601;
+    data?: unknown;
+    requestId?: string;
+  };
+};
+
+// Event Types
+export interface FlowExecutionEvent {
+  flowId: ID;
+  type: 'start' | 'complete' | 'error' | 'pause' | 'resume';
+  timestamp: ISO8601;
+  metadata?: {
+    duration?: number;
+    error?: string;
+    elementsFound?: number;
+    memory?: number;
+    cpu?: number;
+  };
+}
+
+export interface TaskExecutionEvent {
+  taskId: ID;
+  flowId: ID;
+  type: 'start' | 'complete' | 'error' | 'skip';
+  timestamp: ISO8601;
+  action?: TaskAction;
+  result?: {
+    success: boolean;
+    error?: string;
+    duration: number;
+    retries: number;
+    elements?: RawElement[];
+  };
+}
+
+// Validation Types
 export type ValidationResult = {
   isValid: boolean;
   errors?: string[];
   warnings?: string[];
+  metadata?: {
+    timestamp: ISO8601;
+    duration: number;
+    validatedFields: string[];
+  };
 };
 
 export type ElementMatcher = {
-  type: 'id' | 'class' | 'tag';
+  type: 'id' | 'class' | 'tag' | 'xpath' | 'css';
   value: string;
   exact?: boolean;
   options?: {
     caseSensitive?: boolean;
     partial?: boolean;
+    multiple?: boolean;
+    timeout?: number;
   };
 };
 
@@ -273,53 +530,17 @@ export type ElementPredicate = (element: RawElement) => boolean;
 export type FlowValidationResult = {
   isValid: boolean;
   errors: {
-    taskId: string;
+    taskId: ID;
     actionIndex: number;
     message: string;
-    severity: 'error' | 'warning';
+    severity: 'error' | 'warning' | 'info';
+    code?: string;
+    suggestion?: string;
   }[];
-};
-
-// Error Types
-export interface ApiError {
-  code: string;
-  message: string;
-  details?: unknown;
-  timestamp?: string;
-  path?: string;
-}
-
-export type ErrorWithContext = {
-  error: Error;
-  context: {
-    component?: string;
-    action?: string;
-    timestamp: string;
-    data?: unknown;
-  };
-};
-
-// Event Types
-export interface FlowExecutionEvent {
-  flowId: string;
-  type: 'start' | 'complete' | 'error';
-  timestamp: string;
   metadata?: {
-    duration?: number;
-    error?: string;
-    elementsFound?: number;
-  };
-}
-
-export interface TaskExecutionEvent {
-  taskId: string;
-  flowId: string;
-  type: 'start' | 'complete' | 'error';
-  timestamp: string;
-  action?: TaskAction;
-  result?: {
-    success: boolean;
-    error?: string;
+    timestamp: ISO8601;
     duration: number;
+    checkedRules: string[];
   };
-}
+};
+

@@ -1,10 +1,17 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Search, Check, X, Play, Plus } from 'lucide-react';
-import type { ParsedElements, SelectedElement, TaskAction, CrawlerTask, Flow, RawElement } from '../../types';
+import type { 
+  ParsedElements, 
+  SelectedElement, 
+  TaskAction, 
+  CrawlerTask, 
+  Flow, 
+  RawElement,
+  ElementInfo
+} from '../../types';
 import { ElementSummary } from './ElementSummary';
 import { useElementStore } from '../../store/elementStore';
 import { TaskList } from './TaskList';
-import { FlowList } from './FlowList';
 import { Button } from '../ui/Button';
 import { analyzeFlow } from '../../services/api';
 
@@ -25,17 +32,9 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
   flows,
   onFlowCreated
 }) => {
+  // State management
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTab, setSelectedTab] = useState<'ids' | 'classes' | 'tags'>('ids');
-  const { 
-    currentFlowId, 
-    addAnalysis, 
-    setCurrentFlow,
-    getRawElements,
-    parseElements,
-    parsedElements 
-  } = useElementStore();
-  
   const [tasks, setTasks] = useState<CrawlerTask[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [localSelectedElements, setLocalSelectedElements] = useState<SelectedElement[]>([]);
@@ -46,12 +45,23 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
   const [flowName, setFlowName] = useState('');
   const [showNameInput, setShowNameInput] = useState(false);
 
+  // Store hooks
+  const { 
+    currentFlowId, 
+    addAnalysis, 
+    setCurrentFlow,
+    getRawElements,
+    parseElements,
+    parsedElements 
+  } = useElementStore();
+
   // Use either passed selectedElements or local ones based on whether we're in a flow
   const effectiveSelectedElements = currentFlowId ? localSelectedElements : selectedElements;
 
   // Use either store's parsedElements or initial elements based on whether we're in a flow
   const effectiveElements = currentFlowId ? parsedElements : initialElements;
 
+  // Filter elements based on search term and selected tab
   const filteredElements = useMemo(() => {
     if (!effectiveElements) return [];
 
@@ -66,6 +76,7 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
       .sort((a, b) => b[1].count - a[1].count);
   }, [effectiveElements, selectedTab, searchTerm]);
 
+  // Filter raw elements based on selected elements
   const filteredRawElements = useMemo(() => {
     if (effectiveSelectedElements.length === 0) return [];
 
@@ -75,8 +86,9 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
       return [];
     }
 
+    // Filter elements that match ANY of the selected criteria (OR operation)
     return rawElements.filter(element => {
-      return effectiveSelectedElements.every(selected => {
+      return effectiveSelectedElements.some(selected => {
         switch (selected.type) {
           case 'id':
             return element.id === selected.selector.slice(1);
@@ -91,14 +103,35 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
     });
   }, [effectiveSelectedElements, getRawElements]);
 
+  // Debug logging
+  useEffect(() => {
+    console.log('Selected Elements:', effectiveSelectedElements);
+    console.log('Matching Elements:', filteredRawElements);
+  }, [effectiveSelectedElements, filteredRawElements]);
+
+  // Handlers
   const handleAddAction = (action: TaskAction) => {
     const newTask: CrawlerTask = {
       id: crypto.randomUUID(),
-      actions: [action],
+      actions: [{
+        ...action,
+        metadata: {
+          selectionContext: {
+            selectedElements: effectiveSelectedElements,
+            selectedTab,
+            searchTerm,
+            filteredElements: filteredElements.map(([key, info]) => ({
+              key,
+              count: info.count,
+              examples: info.examples
+            }))
+          }
+        }
+      }],
       order: tasks.length
     };
     setTasks([...tasks, newTask]);
-    setLocalSelectedElements([]); // Clear selections after adding action
+    setLocalSelectedElements([]);
   };
 
   const handleDeleteTask = (taskId: string) => {
@@ -110,7 +143,6 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
     const [removed] = newTasks.splice(startIndex, 1);
     newTasks.splice(endIndex, 0, removed);
     
-    // Update order property
     newTasks.forEach((task, index) => {
       task.order = index;
     });
@@ -123,37 +155,50 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
     
     setIsAnalyzing(true);
     try {
-      // Create a temporary flow object for the current tasks
       const currentFlow = {
         id: 'temp-flow',
         name: 'Current Analysis',
-        tasks: [...tasks],
+        tasks: tasks.map(task => ({
+          ...task,
+          metadata: {
+            ...task.metadata,
+            selectionContext: {
+              selectedElements: effectiveSelectedElements,
+              selectedTab,
+              searchTerm,
+              filteredElements: filteredElements.map(([key, info]) => ({
+                key,
+                count: info.count,
+                examples: info.examples
+              }))
+            }
+          }
+        })),
         order: flows.length,
         isAnalyzing: true
       };
 
-      // Combine existing flows with current flow
-      const allFlows = [
-        ...flows,
-        currentFlow
-      ];
+      const allFlows = [...flows, currentFlow];
 
-      console.log('Analyzing flows:', JSON.stringify({
+      console.log('Analyzing flows with selection context:', {
         startUrl,
         flows: allFlows,
-        currentFlow
-      }, null, 2));
-
-      // Send both startUrl and all flows including current one
-      const elements = await analyzeFlow(startUrl, allFlows, tasks);
-      
-      // Store the analyzed elements and tasks
-      setAnalyzedElements({
-        elements,
-        tasks: [...tasks]
+        currentFlow,
+        selectionContext: {
+          selectedElements: effectiveSelectedElements,
+          selectedTab,
+          searchTerm,
+          filteredElementsCount: filteredElements.length
+        }
       });
 
-      // Add the analysis results to store for temporary viewing
+      const elements = await analyzeFlow(startUrl, allFlows, currentFlow.tasks);
+      
+      setAnalyzedElements({
+        elements,
+        tasks: currentFlow.tasks
+      });
+
       addAnalysis({
         flowId: 'temp-analysis',
         elements,
@@ -164,18 +209,18 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
           flowContext: {
             startUrl,
             existingFlows: flows.length,
-            newTasks: tasks.length
+            newTasks: tasks.length,
+            selectionContext: {
+              selectedElements: effectiveSelectedElements,
+              selectedTab,
+              searchTerm
+            }
           }
         }
       });
 
-      // Clear current selections
       setLocalSelectedElements([]);
-      
-      // Force a re-parse of elements
       parseElements();
-
-      // Show name input for the new flow
       setShowNameInput(true);
 
     } catch (error) {
@@ -188,7 +233,6 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
   const handleCreateFlow = () => {
     if (!analyzedElements || !flowName.trim()) return;
 
-    // Create new flow with metadata
     const newFlow: Flow = {
       id: crypto.randomUUID(),
       name: flowName.trim(),
@@ -202,10 +246,8 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
       }
     };
 
-    // Notify parent about new flow
     onFlowCreated(newFlow);
 
-    // Update the analysis results with the proper flow ID
     addAnalysis({
       flowId: newFlow.id,
       elements: analyzedElements.elements,
@@ -217,7 +259,6 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
       }
     });
 
-    // Reset states
     setAnalyzedElements(null);
     setTasks([]);
     setFlowName('');
@@ -242,7 +283,6 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
     };
 
     if (currentFlowId) {
-      // Handle selection locally for flows
       setLocalSelectedElements(prev => {
         const exists = prev.some(e => 
           e.selector === element.selector && e.type === element.type
@@ -257,7 +297,6 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
         return [...prev, element];
       });
     } else {
-      // Use the provided onElementSelect for initial URL analysis
       onElementSelect(element);
     }
   };
@@ -266,13 +305,27 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
     return effectiveSelectedElements.some(e => e.selector === selector && e.type === type);
   };
 
+  const renderElementExample = (info: ElementInfo) => {
+    const example = info.examples[0];
+    return (
+      <pre className="mt-1 text-xs bg-gray-50 p-2 rounded overflow-x-auto">
+        {`<${example.tag}${example.id ? ` id="${example.id}"` : ''}${
+          example.class ? ` class="${example.class.join(' ')}"` : ''
+        }${example.name ? ` name="${example.name}"` : ''}>${
+          example.tag === 'img' ? '' : '...'
+        }</${example.tag}>`}
+      </pre>
+    );
+  };
+
   return (
     <div className="space-y-4">
+      {/* Flows Section */}
       {flows.length > 0 && (
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <h3 className="font-medium mb-4">Created Flows</h3>
           <div className="space-y-2">
-            {flows.map((flow, index) => (
+            {flows.map((flow) => (
               <div 
                 key={flow.id}
                 className="p-3 bg-gray-50 rounded-lg"
@@ -289,8 +342,10 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
         </div>
       )}
 
+      {/* Element Selector Section */}
       {effectiveElements && (
         <div className="bg-white rounded-lg border border-gray-200">
+          {/* Search Bar */}
           <div className="p-4 border-b border-gray-200">
             <div className="flex items-center space-x-2 bg-gray-50 rounded-md px-3 py-2">
               <Search className="h-4 w-4 text-gray-400" />
@@ -312,41 +367,26 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
             </div>
           </div>
 
+          {/* Tab Navigation */}
           <div className="border-b border-gray-200">
             <nav className="flex -mb-px">
-              <button
-                className={`px-4 py-2 text-sm font-medium ${
-                  selectedTab === 'ids'
-                    ? 'border-b-2 border-blue-500 text-blue-600'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-                onClick={() => setSelectedTab('ids')}
-              >
-                IDs ({effectiveElements.ids.size})
-              </button>
-              <button
-                className={`px-4 py-2 text-sm font-medium ${
-                  selectedTab === 'classes'
-                    ? 'border-b-2 border-blue-500 text-blue-600'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-                onClick={() => setSelectedTab('classes')}
-              >
-                Classes ({effectiveElements.classes.size})
-              </button>
-              <button
-                className={`px-4 py-2 text-sm font-medium ${
-                  selectedTab === 'tags'
-                    ? 'border-b-2 border-blue-500 text-blue-600'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-                onClick={() => setSelectedTab('tags')}
-              >
-                Tags ({effectiveElements.tags.size})
-              </button>
+              {(['ids', 'classes', 'tags'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  className={`px-4 py-2 text-sm font-medium ${
+                    selectedTab === tab
+                      ? 'border-b-2 border-blue-500 text-blue-600'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                  onClick={() => setSelectedTab(tab)}
+                >
+                  {tab.charAt(0).toUpperCase() + tab.slice(1)} ({effectiveElements[tab].size})
+                </button>
+              ))}
             </nav>
           </div>
 
+          {/* Elements List */}
           <div className="max-h-96 overflow-y-auto">
             {filteredElements.length === 0 ? (
               <div className="p-4 text-center text-gray-500">
@@ -388,11 +428,7 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
                       </div>
                       <div className="mt-2 ml-7">
                         <p className="text-xs text-gray-500">Example:</p>
-                        <pre className="mt-1 text-xs bg-gray-50 p-2 rounded overflow-x-auto">
-                          {`<${info.examples[0].tag}${info.examples[0].id ? ` id="${info.examples[0].id}"` : ''}${
-                            info.examples[0].class ? ` class="${info.examples[0].class.join(' ')}"` : ''
-                          }>${info.examples[0].tag === 'img' ? '' : '...'}</${info.examples[0].tag}>`}
-                        </pre>
+                        {renderElementExample(info)}
                       </div>
                     </div>
                   );
@@ -403,6 +439,7 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
         </div>
       )}
 
+      {/* Tasks Section */}
       {tasks.length > 0 && (
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <div className="flex justify-between items-center mb-4">
@@ -464,7 +501,8 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
         </div>
       )}
 
-      {effectiveSelectedElements.length > 0 && filteredRawElements.length > 0 && (
+      {/* Matching Elements Section */}
+      {effectiveSelectedElements.length > 0 && (
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <div className="flex justify-between items-center mb-2">
             <h3 className="font-medium">
@@ -476,12 +514,21 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
               </span>
             )}
           </div>
-          <ElementSummary 
-            elements={filteredRawElements} 
-            onAddAction={handleAddAction}
-          />
+          {filteredRawElements.length > 0 ? (
+            <ElementSummary 
+              elements={filteredRawElements} 
+              onAddAction={handleAddAction}
+            />
+          ) : (
+            <div className="text-center text-gray-500 py-4">
+              No matching elements found
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 };
+
+export default ElementSelector;
+
